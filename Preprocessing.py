@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
-# דרישות: pip install mne numpy scipy matplotlib pandas
 import os
 import numpy as np
 import pandas as pd
 import mne
 import matplotlib.pyplot as plt
 
-# ====== קלט ======
+# ====== input ======
 CNT_FILES = [
     r"C:\_Davidson\projectFiles\eeg files\cnt\1009_1009_2023-04-21_07-40-21.cnt",
     r"C:\_Davidson\projectFiles\eeg files\cnt\1040_1040_2023-06-23_17-15-30.cnt",
 ]
-OUTPUT_DIR = r"C:\_Davidson\projectFiles\eeg files\results"  # תקייה לשמירת תוצאות
+
+# ====== output ======
+OUTPUT_DIR = r"C:\_Davidson\projectFiles\eeg files\results" #output folder
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# הגדרות עיבוד
+# processing settings
 LO_HZ, HI_HZ = 1.0, 45.0
-NOTCH = 50.0  # ישראל
-EPOCH_LEN = 2.0   # שניות
-EPOCH_OVERLAP = 1.0  # חפיפה = 50%
+NOTCH = 50.0  # israel electricity frequency
+EPOCH_LEN = 2.0   # seconds
+EPOCH_OVERLAP = 1.0  # 50% overlap
 
-# פסי תדר
+# bands definition by frequencies
 BANDS = {
     "delta": (1, 3),
     "theta": (4, 7),
@@ -29,27 +30,51 @@ BANDS = {
     "gamma": (30, 45),
 }
 
-# ערוצי עניין פרונטליים (ייקחו רק מה שקיים בפועל)
-FRONTAL_CANDS = ["Fz", "F1", "F2", "F3", "F4", "F5", "F6", "Fp1", "Fp2", "AFz", "AF3", "AF4"]
+# brain areas definition (groups of channels)
+FRONTAL_CANDS = ["1Z", "2Z", "3Z", "1L", "2L", "1R", "2R", "1LA", "2LA", "1RA", "2RA"]
+CENTRAL_CANDS = ["4Z", "6Z", "3L", "4L", "3R", "4R", "2LB", "3LB", "2RB", "3RB"]
+OCCIPITAL_CANDS = ["7Z", "8Z", "9Z", "7L", "8L", "9L", "7R", "8R", "9R", "3LD", "4LD", "3RD", "4RD"]
+
 
 def safe_set_montage(raw):
     """adding montage from supplied elc file."""
-    # montage = mne.channels.read_custom_montage(
-    #     r"C:\_Davidson\projectFiles\eeg files\elc\NA-261.elc",
-    #     head_size=0.095) #todo Yael - set the correct elc units
-
     pos = read_ant_elc(r"C:\_Davidson\projectFiles\eeg files\elc\NA-261.elc")
-    #pos = recenter_rescale_montage(pos, target_radius=0.095) # pos = dict: name -> (x,y,z)
-    montage = mne.channels.make_dig_montage(ch_pos=pos)
+    montage = mne.channels.make_dig_montage(
+        ch_pos=pos,
+        coord_frame="head"
+        # , nasion=[0,1,0], lpa=[-1,0,0], rpa=[1,0,0]
+        )
+
+    # verify the channels are aligned
+    raw_chs = {c.upper() for c in raw.info['ch_names']}
+    mon_chs = {c.upper() for c in montage.ch_names}
+    missing_in_montage = sorted(raw_chs - mon_chs)
+    extra_in_montage = sorted(mon_chs - raw_chs)
+    print("missing in montage:", missing_in_montage[:20])
+    print("extra in montage:", extra_in_montage[:20])
+
     # set the montage from the .elc file
     raw.set_montage(montage)
-    raw.plot_sensors(show_names=True)
 
+    raw.plot_sensors(show_names=True, kind='topomap') # 2D. replace with '3d' for 3D plot
+
+"""data filtering and normalization"""
 def preprocess_raw(raw):
-    """סינון ונרמול בסיסי."""
+    """Loads the EEG signal data into memory.
+    In MNE, data can be stored on disk (lazy loading), 
+    and this command ensures the data is fully available for filtering and processing."""
     raw.load_data()
-    # רפרנס ממוצע
+    """
+    Sets the EEG reference to the average of all electrodes.
+    That means the signal at each electrode is recalculated relative to the mean potential across all electrodes.
+    This helps reduce overall noise and ensures all channels are measured against a common reference.
+    """
+    # avg reference
     raw.set_eeg_reference("average", projection=False)
+    # # Z-Score normalization for each channel
+    data = raw.get_data(picks="eeg")
+    data_z = (data - np.mean(data, axis=1, keepdims=True)) / (np.std(data, axis=1, keepdims=True) + 1e-12)
+    raw._data = data_z
     # notch 50Hz
     raw.notch_filter(freqs=[NOTCH], picks="eeg")
     # band-pass 1-45Hz
@@ -57,7 +82,7 @@ def preprocess_raw(raw):
     return raw
 
 def make_epochs(raw):
-    """חלונות קבועים באורך 2s עם חפיפה 50%."""
+    """split to time windows (epochs) of 2secs and 50% overlap"""
     epochs = mne.make_fixed_length_epochs(
         raw,
         duration=EPOCH_LEN,
@@ -87,10 +112,22 @@ def summarize_features(epochs, freqs, psd_data, ch_names):
     יחסיים מול הסה״כ, ועוד אינדקסים (Theta/Alpha, Engagement).
     """
     n_epochs, n_ch, _ = psd_data.shape
-    # זמן אמצע לכל חלון:
+    # נבדוק כמה ערוצים זוהו בכל אזור
+    print(f"ערוצים מזוהים:")
+    for region_name, region_list in {
+        "frontal": FRONTAL_CANDS,
+        "central": CENTRAL_CANDS,
+        "occipital": OCCIPITAL_CANDS,
+    }.items():
+        region_idx = [i for i, ch in enumerate(ch_names) if ch in region_list]
+        print(f"  {region_name}: {len(region_idx)} channels found ({[ch_names[i] for i in region_idx]})")
+
+
+    # זמן אמצע לכל חלון - Compute each epoch’s time midpoint
     times = epochs.events[:, 0] / epochs.info["sfreq"]  # תחילת כל חלון
     time_mid = times + (EPOCH_LEN / 2.0)
 
+    # This sums all frequencies together → gives the total spectral power for each channel and epoch.
     total_power = psd_data.sum(axis=-1)  # [n_epochs, n_ch]
 
     # עוצמות לכל פס לכל ערוץ
@@ -99,17 +136,26 @@ def summarize_features(epochs, freqs, psd_data, ch_names):
         band_abs[band] = band_power(psd_data, freqs, f1, f2)  # [n_epochs, n_ch]
 
     # ממוצע על פני ערוצים (כל-המוח)
+    #Average power across all channels
     df = pd.DataFrame({"time_s": time_mid})
     for band in BANDS.keys():
         df[f"{band}_abs_mean"] = band_abs[band].mean(axis=1)
         df[f"{band}_rel_mean"] = (band_abs[band] / (total_power + 1e-12)).mean(axis=1)
 
     # ערוצים פרונטליים (אם קיימים)
-    frontal_idx = [i for i, ch in enumerate(ch_names) if ch in FRONTAL_CANDS]
-    if len(frontal_idx) >= 1:
-        for band in BANDS.keys():
-            df[f"{band}_frontal_abs_mean"] = band_abs[band][:, frontal_idx].mean(axis=1)
-            df[f"{band}_frontal_rel_mean"] = (band_abs[band][:, frontal_idx] / (total_power[:, frontal_idx] + 1e-12)).mean(axis=1)
+    # חישוב ממוצעים לכל אזורי המוח (קדמי, מרכזי, עורפי)
+    for region_name, region_list in {
+        "frontal": FRONTAL_CANDS,
+        "central": CENTRAL_CANDS,
+        "occipital": OCCIPITAL_CANDS,
+    }.items():
+        region_idx = [i for i, ch in enumerate(ch_names) if ch in region_list]
+        if len(region_idx) >= 1:
+            for band in BANDS.keys():
+                df[f"{band}_{region_name}_abs_mean"] = band_abs[band][:, region_idx].mean(axis=1)
+                df[f"{band}_{region_name}_rel_mean"] = (
+                        band_abs[band][:, region_idx] / (total_power[:, region_idx] + 1e-12)
+                ).mean(axis=1)
 
     # אינדקסים קוגניטיביים בסיסיים
     # Theta/Alpha (גבוה -> יותר עומס לרוב), Engagement = Beta/(Alpha+Theta)
@@ -148,7 +194,7 @@ def plot_quick(df, base_name):
 def process_cnt_file(fname):
     print(f"\n=== מעבדת: {os.path.basename(fname)} ===")
     # שימוש בקורא הנכון ל-ANT Neuro
-    raw = mne.io.read_raw_ant(fname, preload=True)
+    raw = mne.io.read_raw_ant(fname, preload=True, verbose=True)
 
     safe_set_montage(raw)
     raw = preprocess_raw(raw)
@@ -196,23 +242,6 @@ def read_ant_elc(fname):
 
     pos = dict(zip(ch_names, coords))
     return pos
-
-def recenter_rescale_montage(pos, target_radius=0.095):
-    # pos = montage._get_ch_pos()                     # dict: name -> (x,y,z)
-    names, P = zip(*pos.items())
-    P = np.array(P, float)                          # (n,3)
-
-    # 1) recentre at origin
-    center = P.mean(axis=0)
-    P0 = P - center
-
-    # 2) rescale to target head radius
-    radii = np.linalg.norm(P0, axis=1)
-    scale = target_radius / np.median(radii)
-    Pn = P0 * scale
-
-    new_pos = dict(zip(names, Pn))
-    return new_pos
 
 def main():
     all_runs = []
