@@ -26,7 +26,6 @@ BATCH_SIZE = 32           # number of samples per batch. the model improves itse
 LEARNING_RATE = 1e-3      # learning rate for the optimizer
 PATIENCE = 10             # early stopping patience (epochs without improvement)
 
-
 # Load and prepare the data
 def load_features(csv_path):
     """
@@ -171,7 +170,7 @@ def main():
     errors = compute_reconstruction_error(model, X_full, scaler)
 
     df["reconstruction_error"] = errors
-    out_path = os.path.join(OUTPUT_DIR, "pattern_learning_with_errors.csv")
+    out_path = os.path.join(OUTPUT_DIR, "1009_pattern_learning_with_errors.csv")
     df.to_csv(out_path, index=False, encoding="utf-8")
 
     print(f"\nSaved file with reconstruction errors → {out_path}")

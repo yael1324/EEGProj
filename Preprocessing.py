@@ -108,6 +108,10 @@ if __name__ == "__main__":
 
     raw = safe_set_montage(raw) # להגדיר מונטאז' ולראות את האלקטרודות
 
+    epochs = make_epochs(raw)
+    print(epochs)
+    epochs.plot(n_epochs=1, n_channels=10, scalings="auto")
+
     import matplotlib.pyplot as plt
 
     plt.show()  # משאיר את התמונה של האלקטרודות על הראש פתוחה במקום שתיסגר ישר
