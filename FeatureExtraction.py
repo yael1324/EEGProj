@@ -6,7 +6,7 @@ import mne
 import matplotlib.pyplot as plt
 from Preprocessing import preprocess_raw, make_epochs, safe_set_montage, EPOCH_LEN, LO_HZ, HI_HZ, NOTCH
 
-# ====== input/output ======
+# input/output
 CNT_FILES = [
     r"C:\_Davidson\projectFiles\eeg files\cnt\1009_1009_2023-04-21_07-40-21.cnt",
     r"C:\_Davidson\projectFiles\eeg files\cnt\1040_1040_2023-06-23_17-15-30.cnt",
@@ -15,7 +15,7 @@ CNT_FILES = [
 OUTPUT_DIR = r"C:\_Davidson\projectFiles\eeg files\results"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# ====== band and region definitions ======
+# band and region definitions
 BANDS = {
     "delta": (1, 3),
     "theta": (4, 7),

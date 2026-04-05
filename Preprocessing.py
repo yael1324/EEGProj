@@ -3,7 +3,7 @@ import os
 import numpy as np
 import mne
 
-# input/output settings
+# input/output
 LO_HZ, HI_HZ = 1.0, 45.0
 NOTCH = 50.0  # Israel electricity frequency
 EPOCH_LEN = 2.0   # seconds
@@ -39,11 +39,11 @@ def read_ant_elc(fname):
                 coords.append([x, y, z])
 
     coords = np.array(coords, dtype=float)
-    coords /= 1000.0  # convert mm → meters (MNE expects SI units)
+    coords /= 1000.0  #הופך ממילימטרים למטרים כי זה מה שMNE מקבל
 
-    # --- ROTATE COORDINATES BY 90 DEGREES + FIX LEFT/RIGHT ---
-    coords = coords[:, [1, 0, 2]]  # swap x,y (הופך את ציר איקס עם ווי כדי לסובב ב90 מעלות)
-    coords[:, 0] *= -1  # invert x-axis (הופך את כיוון ציר איקס כדי שיתן תמונה נכונה)
+    # rotate coordinates by 90 degrees + fix left/right
+    coords = coords[:, [1, 0, 2]]  #הופך את ציר איקס עם ווי כדי לסובב ב90 מעלות
+    coords[:, 0] *= -1  #הופך את כיוון ציר איקס כדי שיתן תמונה נכונה
 
     pos = dict(zip(ch_names, coords))
     return pos

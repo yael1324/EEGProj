@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Stage 3 – Pattern Learning (Autoencoder Training)
-Goal:
-Train an Autoencoder model to learn EEG feature patterns and compute
-the reconstruction error per window. This error will later serve
-as a proxy for "understanding level" (low error = likely understanding).
-"""
 
 import os
 import numpy as np
@@ -53,10 +46,13 @@ def load_features(csv_path):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Split 80% train / 20% validation
-    # 80% gives the model enough data to learn patterns,
-    # 20% is held aside to evaluate progress and apply early stopping.
-    X_train, X_validation = train_test_split(X_scaled, test_size=0.2, random_state=42, shuffle=True)
+    # Split data into Train / Validation / Test
+    # 70% training, 15% validation, 15% test
+    X_train, X_temp = train_test_split(X_scaled, test_size=0.30, random_state=42, shuffle=True)
+
+    # split remaining 30% into validation (15%) and test (15%)
+    X_validation, X_test = train_test_split(X_temp, test_size=0.5, random_state=42, shuffle=True)
+
     return X_train, X_validation, feature_cols, scaler
 
 
@@ -102,6 +98,8 @@ def train_pattern_learner(X_train, X_validation, input_dim):
 
     best_val_loss = np.inf
     patience_counter = 0
+    train_losses = []
+    val_losses = []
 
     for epoch in range(EPOCHS):
         model.train()
@@ -118,6 +116,8 @@ def train_pattern_learner(X_train, X_validation, input_dim):
             val_loss = criterion(val_outputs, X_validation_t)
 
         print(f"Epoch {epoch+1}/{EPOCHS} | Train Loss: {loss.item():.6f} | Val Loss: {val_loss.item():.6f}")
+        train_losses.append(loss.item())
+        val_losses.append(val_loss.item())
 
         # Early stopping logic
         if val_loss.item() < best_val_loss:
@@ -132,7 +132,7 @@ def train_pattern_learner(X_train, X_validation, input_dim):
 
     # Restore the best model version
     model.load_state_dict(best_model_state)
-    return model
+    return model, train_losses, val_losses
 
 
 # ====== 4. Compute reconstruction errors ======
@@ -162,7 +162,7 @@ def main():
     X_train, X_validation, feature_cols, scaler = load_features(INPUT_CSV)
     input_dim = len(feature_cols)
 
-    model = train_pattern_learner(X_train, X_validation, input_dim)
+    model, train_losses, val_losses = train_pattern_learner(X_train, X_validation, input_dim)
 
     # Compute reconstruction errors for the full dataset
     df = pd.read_csv(INPUT_CSV)
@@ -172,6 +172,23 @@ def main():
     df["reconstruction_error"] = errors
     out_path = os.path.join(OUTPUT_DIR, "1009_pattern_learning_with_errors.csv")
     df.to_csv(out_path, index=False, encoding="utf-8")
+
+    import matplotlib.pyplot as plt
+
+    plt.figure()
+    plt.plot(train_losses, label="Training Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Autoencoder Training Loss")
+    plt.legend()
+    plt.tight_layout()
+
+    loss_plot_path = os.path.join(OUTPUT_DIR, "autoencoder_training_loss.png")
+    plt.savefig(loss_plot_path, dpi=150)
+    plt.close()
+
+    print(f"Saved training loss plot → {loss_plot_path}")
 
     print(f"\nSaved file with reconstruction errors → {out_path}")
 

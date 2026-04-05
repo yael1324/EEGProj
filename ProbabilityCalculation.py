@@ -1,20 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-Stage 4 – Probability Calculation
-Goal:
-Convert reconstruction_error (from Stage 3) into a probability-like score (0–1)
-that represents "probability of understanding" over time, and save results + plot.
-"""
 
 import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ====== input/output ======
+# input/output
 # כאן ניתן לעדכן בכל פעם לקובץ ה-errors של ההקלטה הרצויה (1009 / 1040 וכו')
 INPUT_CSV = r"C:\_Davidson\projectFiles\eeg files\results\1009_pattern_learning_with_errors.csv"
-
 
 OUTPUT_DIR = r"C:\_Davidson\projectFiles\eeg files\results"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -38,7 +31,6 @@ def errors_to_probability(errors: np.ndarray) -> np.ndarray:
     Uses min-max scaling + inversion:
         p = 1 - (e - min) / (max - min)
 
-    Notes:
     - If all errors are identical, returns 0.5 for all rows to avoid division by zero.
     """
     e = np.asarray(errors, dtype=float)
@@ -61,8 +53,13 @@ def main():
     if missing:
         raise ValueError(f"Missing required columns in input CSV: {sorted(missing)}")
 
-    # 2) Convert errors -> probability
+    # 2) Convert errors to probability
     df["prob_understanding"] = errors_to_probability(df["reconstruction_error"].values)
+
+    # Calculate average understanding
+    print("Min:", df["prob_understanding"].min())
+    print("Max:", df["prob_understanding"].max())
+    print("Mean:", df["prob_understanding"].mean())
 
     # 3) Save new CSV
     df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8")
